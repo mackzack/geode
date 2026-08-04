@@ -11,7 +11,9 @@ runs:
   steps:
   - name: Setup
     shell: bash
+    env:
+      HOST: ${{ inputs.host }}
     run: |
-      curl -L https://github.com/ninja-build/ninja/releases/latest/download/ninja-${{ inputs.host }}.zip -o ninja.zip
+      curl -L https://github.com/ninja-build/ninja/releases/latest/download/ninja-$HOST.zip -o ninja.zip
       7z x ninja.zip -o"$GITHUB_WORKSPACE/ninja"
       echo "$GITHUB_WORKSPACE/ninja" >> $GITHUB_PATH
