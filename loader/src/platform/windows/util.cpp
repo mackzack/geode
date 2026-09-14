@@ -15,11 +15,32 @@ using namespace geode::prelude;
 #include <Geode/loader/GameEvent.hpp>
 #include <Geode/loader/Log.hpp>
 #include <filesystem>
+#include <algorithm>
+#include <string>
+#include <string_view>
 #include <Geode/utils/permission.hpp>
 #include <Geode/utils/ObjcHook.hpp>
 #include <Geode/utils/string.hpp>
 #include "../../utils/thread.hpp"
 #include <arc/sync/oneshot.hpp>
+
+static std::wstring quoteArgument(std::wstring_view arg) {
+    std::wstring result = L"\"";
+    size_t slashes = 0;
+    for (wchar_t ch : arg) {
+        if (ch == L'\\') {
+            ++slashes;
+            continue;
+        }
+        result.append(ch == L'"' ? slashes * 2 + 1 : slashes, L'\\');
+        result += ch;
+        slashes = 0;
+    }
+    // Backslashes before the closing quote must also be escaped.
+    result.append(slashes * 2, L'\\');
+    result += L'"';
+    return result;
+}
 
 // https://stackoverflow.com/questions/25986331/how-to-determine-windows-version-in-future-proof-way
 #pragma comment(lib, "ntdll.lib")
@@ -192,7 +213,16 @@ arc::Future<file::PickManyResult> file::pickMany(FilePickOptions options) {
 }
 
 void utils::web::openLinkUnsafe(ZStringView url) {
-    ShellExecuteW(0, 0, utils::string::utf8ToWide(url).c_str(), 0, 0, SW_SHOW);
+    auto link = utils::string::utf8ToWide(url);
+    // Never dispatch local files or arbitrary protocol handlers to the shell.
+    if ((_wcsnicmp(link.c_str(), L"https://", 8) != 0 &&
+         _wcsnicmp(link.c_str(), L"http://", 7) != 0) ||
+        link.find_first_of(L"\"\\") != std::wstring::npos ||
+        std::any_of(link.begin(), link.end(), [](wchar_t ch) { return ch <= L' ' || ch == 0x7f; })) {
+        log::error("Refusing to open an invalid or unsupported web URL.");
+        return;
+    }
+    ShellExecuteW(nullptr, L"open", link.c_str(), nullptr, nullptr, SW_SHOW);
 }
 
 CCPoint cocos::getMousePos() {
@@ -292,15 +322,29 @@ void geode::utils::game::restart(bool saveData, bool safeMode) {
     const auto workingDir = dirs::getGameDir();
 
     wchar_t buffer[MAX_PATH];
-    GetModuleFileNameW(nullptr, buffer, MAX_PATH);
-    auto gdName = L"\"" + std::filesystem::path(buffer).filename().native();
+    auto size = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (size == 0 || size >= MAX_PATH) {
+        log::error("Unable to determine the game executable. Not restarting.");
+        return;
+    }
+    auto gdName = quoteArgument(std::filesystem::path(buffer).filename().native());
     if (safeMode) {
-        gdName += L"\" --geode:safe-mode";
+        gdName += L" --geode:safe-mode";
     }
 
     // launch updater
     auto const updaterPath = workingDir / "GeodeUpdater.exe";
-    ShellExecuteW(nullptr, L"open", updaterPath.c_str(), gdName.c_str(), workingDir.c_str(), false);
+    auto commandLine = quoteArgument(updaterPath.native()) + L" " + gdName;
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(updaterPath.c_str(), commandLine.data(), nullptr, nullptr, FALSE, 0,
+        nullptr, workingDir.c_str(), &startup, &process)) {
+        log::error("Unable to launch updater ({}). Not restarting.", GetLastError());
+        return;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
 
     exit(saveData);
 }
@@ -315,9 +359,7 @@ void geode::utils::game::launchLoaderUninstaller(bool deleteSaveData) {
 
     std::wstring params;
     if (deleteSaveData) {
-        params.append(L"\"/DATA=");
-        params.append(dirs::getSaveDir().native());
-        params.push_back(L'\"');
+        params = quoteArgument(L"/DATA=" + dirs::getSaveDir().native());
     }
 
     // launch uninstaller
