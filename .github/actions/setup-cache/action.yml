@@ -17,7 +17,7 @@ runs:
   steps:
   # https://github.com/mozilla/sccache/issues/2090
   - name: Download custom sccache
-    uses: robinraju/release-downloader@v1.10
+    uses: robinraju/release-downloader@c39a3b234af58f0cf85888573d361fb6fa281534 # v1.10
     with:
       repository: cgytrus/sccache
       latest: true
@@ -36,7 +36,7 @@ runs:
     if: inputs.host == 'mac' && inputs.use-ccache
 
   - name: Setup sccache
-    uses: hendrikmuhs/ccache-action@v1.2.22
+    uses: hendrikmuhs/ccache-action@33522472633dbd32578e909b315f5ee43ba878ce # v1.2.22
     with:
       variant: sccache
       key: ${{ inputs.target }}-v1

@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Development Release
-        uses: robinraju/release-downloader@v1.9
+        uses: robinraju/release-downloader@368754b9c6f47c345fcfbf42bcb577c2f0f5f395 # v1.9
         with:
           tag: nightly
           fileName: '*'
@@ -48,7 +48,7 @@ jobs:
           mv dev/resources.zip resources.zip
 
       - name: Create Draft Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
