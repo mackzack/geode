@@ -151,7 +151,8 @@ DWORD WINAPI vcredistThread(LPVOID lpParam) {
     if (SUCCEEDED(hr)) {
         ShellExecuteW(NULL, L"open", tempPath.c_str(), NULL, NULL, SW_SHOWNORMAL);
     } else {
-        ShellExecuteW(NULL, L"open", VCREDIST_LINK, NULL, NULL, SW_SHOWNORMAL);
+        showError(L"Unable to download the Visual C++ Redistributable. "
+            L"Please download and install it manually from:\n\n" + std::wstring(VCREDIST_LINK));
     }
 
     if (SUCCEEDED(coHr)) CoUninitialize();
@@ -206,14 +207,12 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    auto gameName = std::filesystem::path(utf8ToWide(argv[1]));
-    if (gameName.empty() || gameName != gameName.filename() ||
-        _wcsicmp(gameName.extension().c_str(), L".exe") != 0 ||
-        gameName.native().find_first_of(L"\"<>:|?*") != std::wstring::npos) {
+    // Only restart the game, never an arbitrary executable supplied by the caller.
+    if (_wcsicmp(utf8ToWide(argv[1]).c_str(), L"GeometryDash.exe") != 0) {
         showError(L"Invalid game executable. Please, restart the game manually.");
         return 1;
     }
-    auto gamePath = workingDir / gameName;
+    auto gamePath = workingDir / L"GeometryDash.exe";
     if (!waitForFile(gamePath)) {
         showError(L"There was an error restarting GD. Please, restart the game manually.");
         return 0;
