@@ -105,6 +105,7 @@ jobs:
         sudo apt-get install -y wget lsb-release software-properties-common gnupg
 
         wget https://apt.llvm.org/llvm.sh
+        echo "03878e08f47b66cc95bc4b544b0db3c6d9ce8d60e6cf2492ae357984330a9eae  llvm.sh" | sha256sum --check
         chmod +x llvm.sh
         sudo ./llvm.sh 21 all
 
