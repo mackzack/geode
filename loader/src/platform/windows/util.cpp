@@ -10,6 +10,8 @@ using namespace geode::prelude;
 #include <ShlObj.h>
 #include <shlwapi.h>
 #include <shobjidl.h>
+#include <intshcut.h>
+#pragma comment(lib, "uuid.lib")
 #include <Geode/utils/web.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/GameEvent.hpp>
@@ -222,7 +224,32 @@ void utils::web::openLinkUnsafe(ZStringView url) {
         log::error("Refusing to open an invalid or unsupported web URL.");
         return;
     }
-    ShellExecuteW(nullptr, L"open", link.c_str(), nullptr, nullptr, SW_SHOW);
+    // Use the URL-specific API instead of passing user input to ShellExecute.
+    auto const initResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(initResult) && initResult != RPC_E_CHANGED_MODE) {
+        log::error("Unable to initialize COM to open a web URL.");
+        return;
+    }
+
+    IUniformResourceLocatorW* locator = nullptr;
+    auto result = CoCreateInstance(CLSID_InternetShortcut, nullptr, CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&locator));
+    if (SUCCEEDED(result)) {
+        result = locator->SetURL(link.c_str(), 0);
+        if (SUCCEEDED(result)) {
+            URLINVOKECOMMANDINFOW command{};
+            command.dwcbSize = sizeof(command);
+            command.dwFlags = IURL_INVOKECOMMAND_FL_USE_DEFAULT_VERB;
+            result = locator->InvokeCommand(&command);
+        }
+        locator->Release();
+    }
+    if (SUCCEEDED(initResult)) {
+        CoUninitialize();
+    }
+    if (FAILED(result)) {
+        log::error("Unable to open a web URL ({}).", static_cast<unsigned long>(result));
+    }
 }
 
 CCPoint cocos::getMousePos() {
