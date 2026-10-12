@@ -2,6 +2,8 @@
 #include <iostream>
 #include <array>
 #include <filesystem>
+#include <string>
+#include <string_view>
 
 std::filesystem::path workingDir;
 std::filesystem::path geodeDir;
@@ -17,9 +19,29 @@ void showError(std::wstring const& error) {
 
 std::wstring utf8ToWide(std::string const& str) {
     int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+    if (size == 0) return {};
     std::wstring wstr(size, L'\0');
     MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], size);
+    wstr.resize(size - 1);
     return wstr;
+}
+
+static std::wstring quoteArgument(std::wstring_view arg) {
+    std::wstring result = L"\"";
+    size_t slashes = 0;
+    for (wchar_t ch : arg) {
+        if (ch == L'\\') {
+            ++slashes;
+            continue;
+        }
+        result.append(ch == L'"' ? slashes * 2 + 1 : slashes, L'\\');
+        result += ch;
+        slashes = 0;
+    }
+    // Backslashes before the closing quote must also be escaped.
+    result.append(slashes * 2, L'\\');
+    result += L'"';
+    return result;
 }
 
 void showError(std::wstring error, std::error_code ec) {
@@ -129,7 +151,8 @@ DWORD WINAPI vcredistThread(LPVOID lpParam) {
     if (SUCCEEDED(hr)) {
         ShellExecuteW(NULL, L"open", tempPath.c_str(), NULL, NULL, SW_SHOWNORMAL);
     } else {
-        ShellExecuteW(NULL, L"open", VCREDIST_LINK, NULL, NULL, SW_SHOWNORMAL);
+        showError(L"Unable to download the Visual C++ Redistributable. "
+            L"Please download and install it manually from:\n\n" + std::wstring(VCREDIST_LINK));
     }
 
     if (SUCCEEDED(coHr)) CoUninitialize();
@@ -184,18 +207,33 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (!waitForFile(workingDir / argv[1])) {
+    // Only restart the game, never an arbitrary executable supplied by the caller.
+    if (_wcsicmp(utf8ToWide(argv[1]).c_str(), L"GeometryDash.exe") != 0) {
+        showError(L"Invalid game executable. Please, restart the game manually.");
+        return 1;
+    }
+    auto gamePath = workingDir / L"GeometryDash.exe";
+    if (!waitForFile(gamePath)) {
         showError(L"There was an error restarting GD. Please, restart the game manually.");
         return 0;
     }
 
     // build up args for gd
-    std::wstring args;
+    std::wstring args = quoteArgument(gamePath.native());
     for (int i = 2; i < argc; i++) {
-        args += L" " + utf8ToWide(argv[i]);
+        args += L" " + quoteArgument(utf8ToWide(argv[i]));
     }
 
     // restart gd using the provided path
-    ShellExecuteW(NULL, L"open", (workingDir / argv[1]).c_str(), args.c_str(), workingDir.c_str(), TRUE);
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(gamePath.c_str(), args.data(), nullptr, nullptr, FALSE, 0,
+        nullptr, workingDir.c_str(), &startup, &process)) {
+        showError(L"There was an error restarting GD. Please, restart the game manually.");
+        return 1;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
     return 0;
 }
